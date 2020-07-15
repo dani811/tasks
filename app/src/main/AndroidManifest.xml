@@ -77,8 +77,11 @@
   <!-- ***************************** -->
   <!-- Exclude OpenTasks permissions -->
   <!-- ***************************** -->
-  <uses-permission android:name="org.dmfs.permission.READ_TASKS" tools:node="remove"/>
-  <uses-permission android:name="org.dmfs.permission.WRITE_TASKS" tools:node="remove"/>
+<!--  <uses-permission android:name="org.dmfs.permission.READ_TASKS" tools:node="remove"/>-->
+<!--  <uses-permission android:name="org.dmfs.permission.WRITE_TASKS" tools:node="remove"/>-->
+  <permission-group android:name="org.dmfs.tasks.permissiongroup.Tasks" tools:node="remove"/>
+  <permission android:name="org.dmfs.permission.READ_TASKS" tools:node="remove"/>
+  <permission android:name="org.dmfs.permission.WRITE_TASKS" tools:node="remove"/>
 
   <!-- ============================================== Exported Permissions = -->
 
@@ -86,12 +89,19 @@
     android:description="@string/read_permission_label"
     android:icon="@drawable/ic_check_white_24dp"
     android:label="@string/app_name"
-    android:name="org.tasks.permission-group" />
+    android:name="${applicationId}.permission-group" />
 
   <permission
     android:description="@string/permission_read_tasks"
     android:label="@string/read_permission_label"
     android:name="${applicationId}.permission.READ_TASKS"
+    android:permissionGroup="org.tasks.permission-group"
+    android:protectionLevel="dangerous"/>
+
+  <permission
+    android:description="@string/permission_read_tasks"
+    android:label="@string/read_permission_label"
+    android:name="${applicationId}.permission.WRITE_TASKS"
     android:permissionGroup="org.tasks.permission-group"
     android:protectionLevel="dangerous"/>
 
@@ -280,6 +290,23 @@
         android:resource="@xml/file_provider_paths"/>
     </provider>
 
+    <receiver
+      android:name="org.dmfs.provider.tasks.TaskProviderBroadcastReceiver"
+      tools:node="remove"/>
+
+    <provider
+      android:name="org.dmfs.provider.tasks.TaskProvider"
+      android:authorities="org.dmfs.tasks"
+      tools:node="remove" />
+
+    <provider
+      android:name="org.dmfs.provider.tasks.TaskProvider"
+      android:authorities="${applicationId}.opentasks"
+      android:exported="true"
+      android:multiprocess="false"
+      android:readPermission="${applicationId}.permission.READ_TASKS"
+      android:writePermission="${applicationId}.permission.WRITE_TASKS"/>
+
     <!-- ========================================================= Plugins = -->
 
     <activity
@@ -318,6 +345,10 @@
 
     <activity
       android:name=".caldav.LocalListSettingsActivity"
+      android:theme="@style/Tasks"/>
+
+    <activity
+      android:name=".opentasks.OpenTasksListSettingsActivity"
       android:theme="@style/Tasks"/>
 
     <activity

@@ -44,8 +44,8 @@ android {
     defaultConfig {
         testApplicationId = "org.tasks.test"
         applicationId = "org.tasks"
-        versionCode = 90704
-        versionName = "9.7.3"
+        versionCode = 100000
+        versionName = "10.0"
         targetSdkVersion(Versions.targetSdk)
         minSdkVersion(Versions.minSdk)
         testInstrumentationRunner = "org.tasks.TestRunner"
@@ -139,6 +139,11 @@ val genericImplementation by configurations
 val googleplayImplementation by configurations
 
 dependencies {
+    implementation(project(":opentasks"))
+    implementation("org.dmfs:jems:1.33")
+    implementation("org.dmfs:rfc5545-datetime:0.2.4")
+    implementation("org.dmfs:lib-recur:0.11.4")
+
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.0.9")
     implementation("com.gitlab.bitfireAT:dav4jvm:2.1.1")
     implementation("com.gitlab.bitfireAT:ical4android:a675c7194b")

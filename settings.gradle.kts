@@ -1,1 +1,2 @@
+include(":opentasks")
 include("app")

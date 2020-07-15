@@ -18,7 +18,6 @@ import org.tasks.R
 import org.tasks.Strings.isNullOrEmpty
 import org.tasks.caldav.BaseCaldavAccountSettingsActivity
 import org.tasks.caldav.CaldavAccountSettingsActivity
-import org.tasks.data.CaldavAccount
 import org.tasks.data.CaldavAccount.Companion.TYPE_LOCAL
 import org.tasks.data.CaldavDao
 import org.tasks.data.GoogleTaskAccount
@@ -149,7 +148,7 @@ class Synchronization : InjectingPreferenceFragment() {
     }
 
     private suspend fun addCaldavAccounts(category: PreferenceCategory): Boolean {
-        val accounts: List<CaldavAccount> = caldavDao.getAccounts().filter {
+        val accounts = caldavDao.getAccounts().filter {
             it.accountType != TYPE_LOCAL
         }
         for (account in accounts) {
@@ -157,13 +156,24 @@ class Synchronization : InjectingPreferenceFragment() {
             preference.title = account.name
             val error = account.error
             if (isNullOrEmpty(error)) {
-                preference.setSummary(
-                    if (account.isCaldavAccount) R.string.caldav else R.string.etesync
-                )
+                preference.setSummary(when {
+                    account.isCaldavAccount -> R.string.caldav
+                    account.isEteSyncAccount
+                            || (account.isOpenTasks
+                            && account.uuid?.startsWith("com.etesync.syncadapter") == true) ->
+                        R.string.etesync
+                    account.isOpenTasks
+                            && account.uuid?.startsWith("bitfire.at.davdroid") == true ->
+                        R.string.davx5
+                    else -> 0
+                })
             } else {
                 preference.summary = error
             }
             preference.onPreferenceClickListener = Preference.OnPreferenceClickListener {
+                if (account.isOpenTasks) {
+                    return@OnPreferenceClickListener false
+                }
                 val intent = Intent(
                     context,
                     if (account.isCaldavAccount) CaldavAccountSettingsActivity::class.java

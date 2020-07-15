@@ -19,6 +19,10 @@ public class PermissionChecker {
     this.context = context;
   }
 
+  public boolean canAccessOpenTasks() {
+    return checkPermissions("org.dmfs.permission.READ_TASKS", "org.dmfs.permission.WRITE_TASKS");
+  }
+
   public boolean canAccessCalendars() {
     return checkPermissions(permission.READ_CALENDAR, permission.WRITE_CALENDAR);
   }
