@@ -340,6 +340,10 @@
       android:theme="@style/Tasks" />
 
     <activity
+      android:name=".opentasks.OpenTaskAccountSettingsActivity"
+      android:theme="@style/Tasks" />
+
+    <activity
       android:name=".caldav.CaldavCalendarSettingsActivity"
       android:theme="@style/Tasks"/>
 
