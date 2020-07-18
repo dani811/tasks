@@ -18,25 +18,22 @@ import kotlinx.coroutines.withContext
 import net.fortuna.ical4j.model.Date
 import net.fortuna.ical4j.model.property.Geo
 import net.fortuna.ical4j.model.property.RRule
-import org.dmfs.tasks.contract.TaskContract.*
-import org.dmfs.tasks.contract.TaskContract.CommonSyncColumns._SYNC_ID
-import org.dmfs.tasks.contract.TaskContract.TaskListColumns.SYNC_ENABLED
-import org.json.JSONObject
+import org.dmfs.tasks.contract.TaskContract.Tasks
 import org.tasks.LocalBroadcastManager
-import org.tasks.R
 import org.tasks.analytics.Firebase
 import org.tasks.caldav.CaldavConverter
 import org.tasks.caldav.CaldavConverter.toRemote
 import org.tasks.caldav.iCalendar
 import org.tasks.data.*
+import org.tasks.data.OpenTaskDao.Companion.getInt
+import org.tasks.data.OpenTaskDao.Companion.getLong
+import org.tasks.data.OpenTaskDao.Companion.getString
 import org.tasks.date.DateTimeUtils.newDateTime
-import org.tasks.preferences.PermissionChecker
 import org.tasks.time.DateTime
 import org.tasks.time.DateTimeUtils.currentTimeMillis
 import timber.log.Timber
 import java.util.*
 import javax.inject.Inject
-import kotlin.collections.ArrayList
 
 class OpenTasksSynchronizer @Inject constructor(
         @ApplicationContext private val context: Context,
@@ -48,18 +45,12 @@ class OpenTasksSynchronizer @Inject constructor(
         private val firebase: Firebase,
         private val iCalendar: iCalendar,
         private val locationDao: LocationDao,
-        private val permissionChecker: PermissionChecker) {
+        private val openTaskDao: OpenTaskDao) {
 
-    private lateinit var authority: String
     private val cr = context.contentResolver
 
     suspend fun sync() {
-        authority = if (permissionChecker.canAccessOpenTasks()) {
-            "org.dmfs.tasks"
-         } else {
-            context.getString(R.string.opentasks_authority)
-        }
-        val accountMap = getLists().groupBy { it.account!! }
+        val accountMap = openTaskDao.getLists().groupBy { it.account!! }
         caldavDao
                 .findDeletedAccounts(accountMap.keys.toList())
                 .forEach { taskDeleter.delete(it) }
@@ -98,7 +89,7 @@ class OpenTasksSynchronizer @Inject constructor(
         Timber.d("SYNC $calendar")
 
         caldavDao.getDeleted(calendar.uuid!!).forEach {
-            delete(listId, it.`object`!!)
+            openTaskDao.delete(listId, it.`object`!!)
             caldavDao.delete(it)
         }
 
@@ -113,7 +104,7 @@ class OpenTasksSynchronizer @Inject constructor(
             }
         }
 
-        val etags = getEtags(listId)
+        val etags = openTaskDao.getEtags(listId)
         etags.forEach {
             val caldavTask = caldavDao.getTask(calendar.uuid!!, it.first)
             if (caldavTask == null || caldavTask.etag != it.second) {
@@ -145,51 +136,10 @@ class OpenTasksSynchronizer @Inject constructor(
         }
     }
 
-    private suspend fun getLists(): List<CaldavCalendar> = withContext(Dispatchers.IO) {
-        val calendars = ArrayList<CaldavCalendar>()
-        cr.query(
-                TaskLists.getContentUri(authority),
-                null,
-                "$SYNC_ENABLED=1 AND ($ACCOUNT_TYPE = 'bitfire.at.davdroid' OR $ACCOUNT_TYPE = 'com.etesync.syncadapter')",
-                null,
-                null)?.use {
-            while (it.moveToNext()) {
-                val accountType = it.getString(TaskLists.ACCOUNT_TYPE)
-                val accountName = it.getString(TaskLists.ACCOUNT_NAME)
-                calendars.add(CaldavCalendar().apply {
-                    id = it.getLong(TaskLists._ID)
-                    account = "$accountType:$accountName"
-                    name = it.getString(TaskLists.LIST_NAME)
-                    color = it.getInt(TaskLists.LIST_COLOR)
-                    url = it.getString(_SYNC_ID)
-                    ctag = it.getString(TaskLists.SYNC_VERSION)
-                            ?.let(::JSONObject)
-                            ?.getString("value")
-                })
-            }
-        }
-        calendars
-    }
-
-    private suspend fun getEtags(listId: Long): List<Pair<String, String>> = withContext(Dispatchers.IO) {
-        val items = ArrayList<Pair<String, String>>()
-        cr.query(
-                Tasks.getContentUri(authority),
-                arrayOf(Tasks._SYNC_ID, Tasks.SYNC1),
-                "${Tasks.LIST_ID} = $listId",
-                null,
-                null)?.use {
-            while (it.moveToNext()) {
-                Pair(it.getString(Tasks._SYNC_ID)!!, it.getString(Tasks.SYNC1)!!).let(items::add)
-            }
-        }
-        items
-    }
-
     private suspend fun push(task: Task, listId: Long) = withContext(Dispatchers.IO) {
         val caldavTask = caldavDao.getTask(task.id) ?: return@withContext
         if (task.isDeleted) {
-            delete(listId, caldavTask.`object`!!)
+            openTaskDao.delete(listId, caldavTask.`object`!!)
             taskDeleter.delete(task)
             return@withContext
         }
@@ -230,7 +180,7 @@ class OpenTasksSynchronizer @Inject constructor(
         // set parent?
         // set tags
         val existing = cr.query(
-                Tasks.getContentUri(authority),
+                Tasks.getContentUri(openTaskDao.authority),
                 arrayOf(Tasks.PRIORITY),
                 "${Tasks.LIST_ID} = $listId AND ${Tasks._SYNC_ID} = '${caldavTask.`object`}'",
                 null,
@@ -244,7 +194,7 @@ class OpenTasksSynchronizer @Inject constructor(
         try {
             if (existing) {
                 val updated = cr.update(
-                        Tasks.getContentUri(authority),
+                        Tasks.getContentUri(openTaskDao.authority),
                         values,
                         "${Tasks.LIST_ID} = $listId AND ${Tasks._SYNC_ID} = '${caldavTask.`object`}'",
                         null)
@@ -253,10 +203,10 @@ class OpenTasksSynchronizer @Inject constructor(
                 }
             } else {
                 values.put(Tasks.PRIORITY, toRemote(task.priority, task.priority))
-                cr.insert(Tasks.getContentUri(authority), values)
+                cr.insert(Tasks.getContentUri(openTaskDao.authority), values)
                         ?: throw Exception("insert returned null")
             }
-        } catch(e: Exception) {
+        } catch (e: Exception) {
             firebase.reportException(e)
             return@withContext
         }
@@ -273,7 +223,7 @@ class OpenTasksSynchronizer @Inject constructor(
             etag: String,
             existing: CaldavTask?) {
         cr.query(
-                Tasks.getContentUri(authority),
+                Tasks.getContentUri(openTaskDao.authority),
                 null,
                 "${Tasks.LIST_ID} = $listId AND ${Tasks._SYNC_ID} = '$item'",
                 null,
@@ -325,30 +275,14 @@ class OpenTasksSynchronizer @Inject constructor(
         }
     }
 
-    private suspend fun delete(listId: Long, item: String): Int = withContext(Dispatchers.IO) {
-        cr.delete(
-                Tasks.getContentUri(authority),
-                "${Tasks.LIST_ID} = $listId AND ${Tasks._SYNC_ID} = '$item'",
-                null)
-    }
-
     companion object {
-        private fun Location?.toGeoString(): String? = this?.let { "$longitude,$latitude"}
+        private fun Location?.toGeoString(): String? = this?.let { "$longitude,$latitude" }
 
         private fun String?.toGeo(): Geo? =
-                this?.takeIf { it.isNotBlank() }?.split(",")?.let { Geo("${it[1]};${it[0]}")}
+                this?.takeIf { it.isNotBlank() }?.split(",")?.let { Geo("${it[1]};${it[0]}") }
 
         private fun String?.toRRule(): RRule? =
                 this?.takeIf { it.isNotBlank() }?.let(::RRule)
-
-        private fun Cursor.getString(columnName: String): String? =
-                getString(getColumnIndex(columnName))
-
-        private fun Cursor.getInt(columnName: String): Int =
-                getInt(getColumnIndex(columnName))
-
-        private fun Cursor.getLong(columnName: String): Long =
-                getLong(getColumnIndex(columnName))
 
         private fun Cursor.getBoolean(columnName: String): Boolean =
                 getInt(getColumnIndex(columnName)) != 0
